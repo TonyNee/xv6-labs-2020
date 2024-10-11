@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="LeetcodeEditor">
+    <option name="projectConfig">
+      <map>
+        <entry key="F:/4_CodingFiles/Clion/LeetCodePro/leetcode/editor/cn/[583]两个字符串的删除操作.cpp">
+          <value>
+            <LeetcodeEditor>
+              <option name="contentPath" value="F:/4_CodingFiles/Clion/LeetCodePro/leetcode/editor/cn/doc/content/[583]两个字符串的删除操作.md" />
+              <option name="frontendQuestionId" value="leetcode.cn583" />
+              <option name="host" value="leetcode.cn" />
+              <option name="path" value="F:/4_CodingFiles/Clion/LeetCodePro/leetcode/editor/cn/[583]两个字符串的删除操作.cpp" />
+              <option name="titleSlug" value="delete-operation-for-two-strings" />
+            </LeetcodeEditor>
+          </value>
+        </entry>
+      </map>
+    </option>
+  </component>
+</project>
