@@ -49,6 +49,13 @@ sys_sbrk(void)
   addr = myproc()->sz;
   if(growproc(n) < 0)
     return -1;
+  if(n > 0) {
+      u2kvmcopy(myproc()->pagetable, myproc()->kpagetable, addr, addr + n);
+  } else {
+      for(int j = addr - PGSIZE; j >= addr + n; j -= PGSIZE) {
+          uvmunmap(myproc()->kpagetable, j, 1, 0);
+      }
+  }
   return addr;
 }
 

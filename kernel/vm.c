@@ -381,23 +381,25 @@ copyout(pagetable_t pagetable, uint64 dstva, char *src, uint64 len)
 int
 copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 {
-  uint64 n, va0, pa0;
+//  uint64 n, va0, pa0;
+//
+//  while(len > 0){
+//    va0 = PGROUNDDOWN(srcva);
+//    pa0 = walkaddr(pagetable, va0);
+//    if(pa0 == 0)
+//      return -1;
+//    n = PGSIZE - (srcva - va0);
+//    if(n > len)
+//      n = len;
+//    memmove(dst, (void *)(pa0 + (srcva - va0)), n);
+//
+//    len -= n;
+//    dst += n;
+//    srcva = va0 + PGSIZE;
+//  }
+//  return 0;
 
-  while(len > 0){
-    va0 = PGROUNDDOWN(srcva);
-    pa0 = walkaddr(pagetable, va0);
-    if(pa0 == 0)
-      return -1;
-    n = PGSIZE - (srcva - va0);
-    if(n > len)
-      n = len;
-    memmove(dst, (void *)(pa0 + (srcva - va0)), n);
-
-    len -= n;
-    dst += n;
-    srcva = va0 + PGSIZE;
-  }
-  return 0;
+    return copyin_new(pagetable, dst, srcva, len);
 }
 
 // Copy a null-terminated string from user to kernel.
@@ -407,45 +409,46 @@ copyin(pagetable_t pagetable, char *dst, uint64 srcva, uint64 len)
 int
 copyinstr(pagetable_t pagetable, char *dst, uint64 srcva, uint64 max)
 {
-  uint64 n, va0, pa0;
-  int got_null = 0;
+//  uint64 n, va0, pa0;
+//  int got_null = 0;
+//
+//  while(got_null == 0 && max > 0){
+//    va0 = PGROUNDDOWN(srcva);
+//    pa0 = walkaddr(pagetable, va0);
+//    if(pa0 == 0)
+//      return -1;
+//    n = PGSIZE - (srcva - va0);
+//    if(n > max)
+//      n = max;
+//
+//    char *p = (char *) (pa0 + (srcva - va0));
+//    while(n > 0){
+//      if(*p == '\0'){
+//        *dst = '\0';
+//        got_null = 1;
+//        break;
+//      } else {
+//        *dst = *p;
+//      }
+//      --n;
+//      --max;
+//      p++;
+//      dst++;
+//    }
+//
+//    srcva = va0 + PGSIZE;
+//  }
+//  if(got_null){
+//    return 0;
+//  } else {
+//    return -1;
+//  }
 
-  while(got_null == 0 && max > 0){
-    va0 = PGROUNDDOWN(srcva);
-    pa0 = walkaddr(pagetable, va0);
-    if(pa0 == 0)
-      return -1;
-    n = PGSIZE - (srcva - va0);
-    if(n > max)
-      n = max;
-
-    char *p = (char *) (pa0 + (srcva - va0));
-    while(n > 0){
-      if(*p == '\0'){
-        *dst = '\0';
-        got_null = 1;
-        break;
-      } else {
-        *dst = *p;
-      }
-      --n;
-      --max;
-      p++;
-      dst++;
-    }
-
-    srcva = va0 + PGSIZE;
-  }
-  if(got_null){
-    return 0;
-  } else {
-    return -1;
-  }
+    return copyinstr_new(pagetable, dst, srcva, max);
 }
 
 /****************  Lab03-pgtbl  **************/
 /**********  1.Print a page table  **********/
-
 static void traversal(pagetable_t pagetable, int level) {
     for(int i = 0; i < 512; ++i) {
         pte_t pte = pagetable[i];
@@ -471,7 +474,6 @@ void vmprint(pagetable_t pagetable) {
 
 /**********************  Lab03-pgtbl  *********************/
 /**********  2.A kernel page table per process  **********/
-
 void
 uvmmap(pagetable_t pagetable, uint64 va, uint64 pa, uint64 sz, int perm)
 {
@@ -513,7 +515,7 @@ void proc_kpagetable_inithart(pagetable_t pkpt) {
     sfence_vma();
 }
 
-void proc_freekpagetable(uint64 pksk, pagetable_t pkpt) {
+void proc_freekpagetable(uint64 pksk, pagetable_t pkpt, uint64 sz) {
     uvmunmap(pkpt, UART0, 1, 0);
     uvmunmap(pkpt, VIRTIO0, 1, 0);
     // uvmunmap(pkpt, CLINT, 0x10000/PGSIZE, 0);
@@ -521,6 +523,20 @@ void proc_freekpagetable(uint64 pksk, pagetable_t pkpt) {
     uvmunmap(pkpt, KERNBASE, ((uint64)etext-KERNBASE)/PGSIZE, 0);
     uvmunmap(pkpt, (uint64)etext, (PHYSTOP-(uint64)etext)/PGSIZE, 0);
     uvmunmap(pkpt, TRAMPOLINE, 1, 0);
+    uvmunmap(pkpt, 0, PGROUNDUP(sz)/PGSIZE, 0);
     uvmunmap(pkpt, pksk, 1, 1);
     freewalk(pkpt);
+}
+
+/*******************  Lab03-pgtbl  ******************/
+/**********  3.Simplify copyin/copyinstr  **********/
+void u2kvmcopy(pagetable_t pagetable, pagetable_t kernelpt, uint64 oldsz, uint64 newsz) {
+    pte_t *pte_from, *pte_to;
+    for (uint64 i = oldsz; i < newsz; i += PGSIZE){
+        if((pte_from = walk(pagetable, i, 0)) == 0)
+            panic("u2kvmcopy: src pte does not exist");
+        if((pte_to = walk(kernelpt, i, 1)) == 0)
+            panic("u2kvmcopy: pte walk failed");
+        *pte_to = (*pte_from) & ~PTE_U;
+    }
 }

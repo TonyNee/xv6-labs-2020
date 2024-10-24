@@ -181,7 +181,13 @@ int             copyinstr(pagetable_t, char *, uint64, uint64);
 void            vmprint(pagetable_t);
 pagetable_t     proc_kpagetable_init(void);
 void            proc_kpagetable_inithart(pagetable_t pkpt);
-void            proc_freekpagetable(uint64 pksk, pagetable_t pkpt);
+void            proc_freekpagetable(uint64 pksk, pagetable_t pkpt, uint64 sz);
+void            u2kvmcopy(pagetable_t pagetable, pagetable_t kernelpt, uint64 oldsz, uint64 newsz);
+pte_t *         walk(pagetable_t pagetable, uint64 va, int alloc);
+// vmcopyin.c
+int             copyin_new(pagetable_t, char *, uint64, uint64);
+int             copyinstr_new(pagetable_t, char *, uint64, uint64);
+
 
 // plic.c
 void            plicinit(void);

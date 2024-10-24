@@ -143,7 +143,7 @@ freeproc(struct proc *p)
 
   // free the kernel pagetable in the RAM
   if(p->kpagetable)
-      proc_freekpagetable(p->kstack, p->kpagetable);
+      proc_freekpagetable(p->kstack, p->kpagetable, p->sz);
   p->kpagetable = 0;
 
   if(p->pagetable)
@@ -219,6 +219,7 @@ void
 userinit(void)
 {
   struct proc *p;
+  pte_t *pte, *kernelpte;
 
   p = allocproc();
   initproc = p;
@@ -227,6 +228,10 @@ userinit(void)
   // and data into it.
   uvminit(p->pagetable, initcode, sizeof(initcode));
   p->sz = PGSIZE;
+
+  pte = walk(p->pagetable, 0, 0);
+  kernelpte = walk(p->kpagetable, 0, 1);
+  *kernelpte = (*pte) & ~PTE_U;
 
   // prepare for the very first "return" from kernel to user.
   p->trapframe->epc = 0;      // user program counter
@@ -281,6 +286,9 @@ fork(void)
     return -1;
   }
   np->sz = p->sz;
+
+  // 复制到新进程的内核页表
+  u2kvmcopy(np->pagetable, np->kpagetable, 0, np->sz);
 
   np->parent = p;
 
