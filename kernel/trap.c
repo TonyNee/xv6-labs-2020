@@ -67,6 +67,17 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
+    if(which_dev == 2 && p->waitreturn == 0) {
+        if(p->interval != 0) {
+            p->spend = p->spend + 1;
+            if(p->spend == p->interval) {
+                switchTrapframe(p->tfsave, p->trapframe);
+                p->spend = 0;
+                p->trapframe->epc = (uint64)p->handler;
+                p->waitreturn = 1;
+            }
+        }
+    }
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
@@ -218,3 +229,40 @@ devintr()
   }
 }
 
+void switchTrapframe(struct trapframe* trapframe, struct trapframe* tfsave) {
+    trapframe->kernel_satp = tfsave->kernel_satp;
+    trapframe->kernel_sp = tfsave->kernel_sp;
+    trapframe->epc = tfsave->epc;
+    trapframe->kernel_hartid = tfsave->kernel_hartid;
+    trapframe->ra = tfsave->ra;
+    trapframe->sp = tfsave->sp;
+    trapframe->gp = tfsave->gp;
+    trapframe->tp = tfsave->tp;
+    trapframe->t0 = tfsave->t0;
+    trapframe->t1 = tfsave->t1;
+    trapframe->t2 = tfsave->t2;
+    trapframe->s0 = tfsave->s0;
+    trapframe->s1 = tfsave->s1;
+    trapframe->a0 = tfsave->a0;
+    trapframe->a1 = tfsave->a1;
+    trapframe->a2 = tfsave->a2;
+    trapframe->a3 = tfsave->a3;
+    trapframe->a4 = tfsave->a4;
+    trapframe->a5 = tfsave->a5;
+    trapframe->a6 = tfsave->a6;
+    trapframe->a7 = tfsave->a7;
+    trapframe->s2 = tfsave->s2;
+    trapframe->s3 = tfsave->s3;
+    trapframe->s4 = tfsave->s4;
+    trapframe->s5 = tfsave->s5;
+    trapframe->s6 = tfsave->s6;
+    trapframe->s7 = tfsave->s7;
+    trapframe->s8 = tfsave->s8;
+    trapframe->s9 = tfsave->s9;
+    trapframe->s10 = tfsave->s10;
+    trapframe->s11 = tfsave->s11;
+    trapframe->t3 = tfsave->t3;
+    trapframe->t4 = tfsave->t4;
+    trapframe->t5 = tfsave->t5;
+    trapframe->t6 = tfsave->t6;
+}
