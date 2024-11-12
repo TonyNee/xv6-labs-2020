@@ -67,6 +67,12 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
+  } else if(r_scause() == 15) {
+
+      if (cow(r_stval(), p->pagetable) == -1) {
+          p->killed = 1;
+      }
+
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
@@ -218,3 +224,24 @@ devintr()
   }
 }
 
+// 提取出的cow函数：成功0，-1失败
+int cow(uint64 va, pagetable_t pgtable) {
+    pte_t *pte = walk(pgtable, va, 0);
+    if(pte == 0 || (*pte & (PTE_V)) == 0 || (*pte & PTE_U) == 0) return -1;
+    uint64 pa = PTE2PA(*pte);
+    uint flags = PTE_FLAGS(*pte);
+
+    char *mem;
+
+    if (flags & PTE_W) return 0;
+
+    if (!(flags & PTE_COW)) return -1;
+
+    flags |= PTE_W; // 我们需要某种手段来记录pte之前是不是可写的
+    flags &= ~PTE_COW; // 清除PTE_COW
+    if ((mem = kalloc()) == 0) return -1;
+    memmove(mem, (char*)pa, PGSIZE);
+    *pte = PA2PTE((uint64)mem) | flags;
+    kfree((void*) pa);
+    return 0;
+}
