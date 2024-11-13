@@ -67,7 +67,7 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
-  } else if(r_scause() == 15) {
+  } else if(r_scause()==13 || r_scause() == 15) {
 
       if (cow(r_stval(), p->pagetable) == -1) {
           p->killed = 1;
@@ -226,6 +226,8 @@ devintr()
 
 // 提取出的cow函数：成功0，-1失败
 int cow(uint64 va, pagetable_t pgtable) {
+    if(va >= MAXVA)
+        return -1;
     pte_t *pte = walk(pgtable, va, 0);
     if(pte == 0 || (*pte & (PTE_V)) == 0 || (*pte & PTE_U) == 0) return -1;
     uint64 pa = PTE2PA(*pte);
