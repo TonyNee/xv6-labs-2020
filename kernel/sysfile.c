@@ -289,7 +289,7 @@ sys_open(void)
   char path[MAXPATH];
   int fd, omode;
   struct file *f;
-  struct inode *ip;
+  struct inode *ip, *dp;
   int n;
 
   if((n = argstr(0, path, MAXPATH)) < 0 || argint(1, &omode) < 0)
@@ -321,6 +321,32 @@ sys_open(void)
     end_op();
     return -1;
   }
+
+    // 处理符号链接
+    if(!(omode & O_NOFOLLOW)) {
+        int i = 0;
+        for(; i < 10 && ip->type == T_SYMLINK; ++i) {
+            // 读出符号链接指向的路径
+            if(readi(ip, 0, (uint64)path, 0, MAXPATH) == 0) {
+                iunlockput(ip);
+                end_op();
+                return -1;
+            }
+            if((dp = namei(path)) == 0) {
+                iunlockput(ip);
+                end_op();
+                return -1;
+            }
+            iunlockput(ip);
+            ip = dp;
+            ilock(ip);
+        }
+        if(i == 10) {
+            iunlockput(ip);
+            end_op();
+            return -1;
+        }
+    }
 
   if((f = filealloc()) == 0 || (fd = fdalloc(f)) < 0){
     if(f)
@@ -484,3 +510,32 @@ sys_pipe(void)
   }
   return 0;
 }
+
+uint64
+sys_symlink(void) {
+    char target[MAXPATH], path[MAXPATH];
+    struct inode* ip_path;
+
+    if(argstr(0, target, MAXPATH) < 0 || argstr(1, path, MAXPATH) < 0) {
+        return -1;
+    }
+
+    begin_op();
+    // 分配一个inode结点，create返回锁定的inode
+    ip_path = create(path, T_SYMLINK, 0, 0);
+    if(ip_path == 0) {
+        end_op();
+        return -1;
+    }
+    // 向inode数据块中写入target路径
+    if(writei(ip_path, 0, (uint64)target, 0, MAXPATH) < MAXPATH) {
+        iunlockput(ip_path);
+        end_op();
+        return -1;
+    }
+
+    iunlockput(ip_path);
+    end_op();
+    return 0;
+}
+
