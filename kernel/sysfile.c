@@ -15,6 +15,7 @@
 #include "sleeplock.h"
 #include "file.h"
 #include "fcntl.h"
+#include "vma.h"
 
 // Fetch the nth word-sized system call argument as a file descriptor
 // and return both the descriptor and the corresponding struct file.
@@ -483,4 +484,101 @@ sys_pipe(void)
     return -1;
   }
   return 0;
+}
+
+uint64 sys_mmap(void)
+{
+    struct vm_area* vmap;
+    struct proc* p;
+    int length, prot, flags, fd, i;
+    uint64 sz;
+
+    if(argint(1, &length) < 0 || argint(2, &prot) < 0 || argint(3, &flags) < 0 || argint(4, &fd) < 0) {
+        return 0xffffffffffffffff;
+    }
+    p = myproc();
+    if(!p->ofile[fd]->readable) {
+        if(prot & PROT_READ)
+            return 0xffffffffffffffff;
+    }
+    if(!p->ofile[fd]->writable) {
+        if(prot & PROT_WRITE && flags == MAP_SHARED)
+            return 0xffffffffffffffff;
+    }
+
+    if((vmap = vma_alloc()) == 0) {
+        return 0xffffffffffffffff;
+    }
+
+    acquire(&p->lock);
+    for(i = 0; i < NOFILE; ++i) {
+        if(p->areaps[i] == 0) {
+            p->areaps[i] = vmap;
+            release(&p->lock);
+            break;
+        }
+    }
+    if(i == NOFILE) {
+        return 0xffffffffffffffff;
+    }
+
+    sz = p->sz;
+    if(lazygrow_proc(length) < 0) {
+        return 0xffffffffffffffff;
+    }
+    vmap->addr = (char*)sz;
+    vmap->length = length;
+    vmap->prot = (prot & PROT_READ) | (prot & PROT_WRITE);
+    vmap->flags = flags;
+    vmap->file = p->ofile[fd];
+    filedup(p->ofile[fd]);
+    return sz;
+}
+
+uint64 sys_munmap(void)
+{
+    struct proc *pr = myproc();
+    int startAddr, length;
+
+    // 获取参数
+    if (argint(0, &startAddr) < 0 || argint(1, &length) < 0) {
+        return -1;
+    }
+
+    // 遍历进程的地址空间
+    for (int i = 0; i < NOFILE; i++) {
+        if (pr->areaps[i] == 0) {
+            continue;
+        }
+        // 查找匹配的起始地址
+        if ((uint64)pr->areaps[i]->addr == startAddr) {
+            // 检查长度是否匹配或覆盖整个区域
+            if (length >= pr->areaps[i]->length) {
+                length = pr->areaps[i]->length;
+            }
+            // 如果区域是可写的并且是共享的，则写回文件
+            if (pr->areaps[i]->prot & PROT_WRITE && pr->areaps[i]->flags == MAP_SHARED) {
+                begin_op();
+                ilock(pr->areaps[i]->file->ip);
+                writei(pr->areaps[i]->file->ip, 1, (uint64)startAddr, 0, length);
+                iunlock(pr->areaps[i]->file->ip);
+                end_op();
+            }
+            // 取消映射
+            uvmunmap(pr->pagetable, (uint64)startAddr, length / PGSIZE, 1);
+            // 释放空间
+            if (length == pr->areaps[i]->length) {
+                fileclose(pr->areaps[i]->file);
+                vma_free(pr->areaps[i]);
+                pr->areaps[i] = 0;
+                return 0;
+            } else {
+                pr->areaps[i]->addr += length;
+                pr->areaps[i]->length -= length;
+                return 0;
+            }
+        }
+    }
+    // 如果没有找到匹配的地址空间，返回错误
+    return -1;
 }

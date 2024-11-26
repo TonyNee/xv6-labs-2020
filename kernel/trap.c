@@ -5,6 +5,11 @@
 #include "spinlock.h"
 #include "proc.h"
 #include "defs.h"
+#include "fs.h"
+#include "sleeplock.h"
+#include "file.h"
+#include "vma.h"
+#include "fcntl.h"
 
 struct spinlock tickslock;
 uint ticks;
@@ -67,6 +72,78 @@ usertrap(void)
     syscall();
   } else if((which_dev = devintr()) != 0){
     // ok
+  } else if(r_scause() == 13 || r_scause() == 15) {
+      uint64 stval = r_stval(); // 获取异常地址
+      if (stval >= p->sz) {
+          // 如果异常地址超出进程地址空间大小，则标记进程为被杀死
+          p->killed = 1;
+      } else {
+          // 否则，计算栈顶保护地址和异常地址的对齐版本
+          uint64 protectTop = PGROUNDDOWN(p->trapframe->sp); // 栈顶地址向下对齐
+          uint64 stvalTop = PGROUNDUP(stval); // 异常地址向上对齐
+          // 如果栈顶保护地址和异常地址的对齐版本不相同
+          if (protectTop != stvalTop) {
+              struct vm_area *vmap = 0; // 初始化内存区域指针为NULL
+              int i;
+              uint64 addr;
+
+              // 遍历进程的内存区域
+              for (i = 0; i < NOFILE; i++) {
+                  if (p->areaps[i] == 0) {
+                      continue; // 如果当前内存区域为空，则跳过
+                  }
+
+                  addr = (uint64)(p->areaps[i]->addr); // 获取内存区域的起始地址
+
+                  // 检查异常地址是否在当前内存区域内
+                  if (addr <= stval && stval < addr + p->areaps[i]->length) {
+                      vmap = p->areaps[i]; // 找到匹配的内存区域，更新指针
+                      break; // 找到后退出循环
+                  }
+              }
+
+              if (i != NOFILE) {
+                  char *mem = kalloc(); // 分配内核内存
+                  int prot = PTE_U; // 设置页表项的基本权限为用户态可访问
+
+                  if (mem == 0) {
+                      // 如果内存分配失败，则标记进程为被杀死
+                      p->killed = 1;
+                  } else {
+                      // 将分配的内存区域清零
+                      memset(mem, 0, PGSIZE);
+
+                      // 对文件 inode 加锁
+                      ilock(vmap->file->ip);
+
+                      // 从文件的 inode 读取数据到分配的内存中
+                      readi(vmap->file->ip, 0, (uint64)mem, PGROUNDDOWN(stval - addr), PGSIZE);
+
+                      // 对文件 inode 解锁
+                      iunlock(vmap->file->ip);
+
+                      // 根据 vmap 的权限设置页表项的权限
+                      if (vmap->prot & PROT_READ) {
+                          prot |= PTE_R; // 如果可读，则设置页表项为可读
+                      }
+                      if (vmap->prot & PROT_WRITE) {
+                          prot |= PTE_W; // 如果可写，则设置页表项为可写（注意：原代码中的 "prot I= PTE_W;" 是错误的）
+                      }
+
+                      // 将物理内存映射到虚拟地址空间
+                      if (mappages(p->pagetable, PGROUNDDOWN(stval), PGSIZE, (uint64)mem, prot) != 0) {
+                          // 如果映射失败，则释放内存并标记进程为被杀死
+                          kfree(mem);
+                          p->killed = 1;
+                      }
+                  }
+              } else {
+                  p->killed = 1;
+              }
+          } else {
+              p->killed = 1;
+          }
+      }
   } else {
     printf("usertrap(): unexpected scause %p pid=%d\n", r_scause(), p->pid);
     printf("            sepc=%p stval=%p\n", r_sepc(), r_stval());
